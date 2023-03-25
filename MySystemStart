@@ -1,0 +1,97 @@
+#!/bin/bash
+
+# The function censors the mac addresses in the txt file specified in the system and writes them to the screen by numbering them and sets the mac address of the network interface sent to the function as the mac address in the number selected by the user
+function change_mac_address() {
+	network_interface=$1
+
+	# Get the list of MAC addresses from a file
+	mac_list=$(cat /home/user/MySysScripts/macList.txt) # MySysScripts is included the path variable
+	IFS=$'\n' read -d '' -r -a mac_array <<< "$mac_list"
+	
+	# -d : Instead of reading the reading process at the end of the file, it continues to the end of the text
+	# -r : Prevents the use of Backslash(\) characters as an escape character
+	# -a : It allows to transfer the read lines to the list(mac_list)
+
+	# Display the list of MAC addresses with numbers 
+	i=1
+	for mac in "${mac_array[@]}"
+	do
+		censored_mac=$(echo $mac | sed 's/^\(..\)[^ ]*/\1:xx:xx:xx:xx:xx/')
+		# Makes only the first digit of mac addresses appear
+		echo "$i. $censored_mac"
+		((i++))
+	done
+
+  	# Ask the user to select a MAC address by number
+	echo -e "\e[32mPlease select a MAC address number:\e[0m"
+	read selection
+
+	# Set the selected MAC address as the network interface's MAC address
+	if (( $selection > 0 && $selection <= ${#mac_array[@]} ))
+	then
+		selected_mac=${mac_array[$selection-1]}
+		echo "Selected MAC address: $selected_mac"
+
+		#systemctl stop NetworkManager
+		sudo ifconfig $network_interface hw ether $selected_mac
+
+		#sudo ip link set dev $network_interface address $selected_mac
+		echo "Network interface's MAC address has been successfully changed."
+		sudo systemctl start NetworkManager
+		echo -e "---Network manager started"
+	else
+		echo "Invalid selection. Please enter a valid number based on the list."
+	fi
+}
+ 
+function view_interface() {
+	output=$(ip link)
+	echo -e "\e[37m$output\e[0m"
+	# \e[32m is used to color text, 31 = red, 32 = green, 34 = blue, 37 = white ...
+	# \e[0m is used to restore color
+}
+
+
+sudo systemctl stop NetworkManager
+echo -e "---NetworkManager stopped"
+# When the script is tried to be run again, the service is stopped because the network manager is open.
+
+sudo systemctl start bluetooth.service
+echo -e "---Bluetooth started"
+
+sudo nextdns stop
+# I preferred to stop nextdns first to make it work healthier
+sudo nextdns start
+echo -e "---Dns started"
+
+
+# Deleting the wifi interface entered by the user in this field.
+# ----------------
+echo -e "---Starting wifi configuring"
+view_interface
+read -p $'\e[32mChoose original wifi card if you want delete it (def=wlan0)(enter for skip): \e[0m' deleteCard
+
+if [[ -z "$deleteCard" ]]; then
+	echo "card is null. Selecting: wlan0"
+	sudo iw dev wlan0 del
+else
+	echo "card not null. Selecting: $deleteCard"
+	sudo iw dev $deleteCard del
+fi
+# ----------------
+
+
+# In this section, the wifi interface selected by the user is sent to the change mac address function
+# ----------------
+view_interface
+read -p $'\e[32mEnter your network card name for change it mac (def=wlp3s0)(enter for skip): \e[0m' card
+
+if [[ -z "$card" ]]
+then
+	echo "card is null. Selecting: wlp3s0"
+	change_mac_address "wlp3s0"
+else
+        echo "card not null. Selecting: $card"
+	change_mac_address $card
+fi
+# ----------------
